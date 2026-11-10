@@ -1,0 +1,200 @@
+### Enterprise RAG System — HTTP API Requests Collection
+### Can be executed using VS Code REST Client or IntelliJ HTTP Client.
+
+@baseUrl = http://localhost:8000
+@tenantSlug = acme
+
+### ============================================================================
+### 1. HEALTH AND READINESS PROBES
+### ============================================================================
+
+### 1.1 Immediate Liveness Probe
+GET {{baseUrl}}/health
+Accept: application/json
+
+### 1.2 Downstream Readiness Probe (DB & AI Providers)
+GET {{baseUrl}}/health/ready
+Accept: application/json
+
+
+### ============================================================================
+### 2. AUTHENTICATION & TOKENS
+### ============================================================================
+
+### 2.1 Authenticate as Admin (Clearance: RESTRICTED 40)
+# @name loginAdmin
+POST {{baseUrl}}/api/v1/auth/token
+Content-Type: application/json
+
+{
+  "email": "admin@acme.corp",
+  "password": "AcmeDemo2026!",
+  "tenant_slug": "{{tenantSlug}}"
+}
+
+### Store token from response
+@adminToken = {{loginAdmin.response.body.access_token}}
+
+### 2.2 Authenticate as HR Specialist (Clearance: INTERNAL 20, Dept: HR)
+# @name loginHR
+POST {{baseUrl}}/api/v1/auth/token
+Content-Type: application/json
+
+{
+  "email": "hr.specialist@acme.corp",
+  "password": "AcmeDemo2026!",
+  "tenant_slug": "{{tenantSlug}}"
+}
+
+@hrToken = {{loginHR.response.body.access_token}}
+
+### 2.3 Authenticate as IT Security Analyst (Clearance: INTERNAL 20, Dept: IT)
+# @name loginIT
+POST {{baseUrl}}/api/v1/auth/token
+Content-Type: application/json
+
+{
+  "email": "sec.analyst@acme.corp",
+  "password": "AcmeDemo2026!",
+  "tenant_slug": "{{tenantSlug}}"
+}
+
+@itToken = {{loginIT.response.body.access_token}}
+
+### 2.4 Verify Caller Identity & Claims
+GET {{baseUrl}}/api/v1/auth/me
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+
+### ============================================================================
+### 3. DOCUMENT MANAGEMENT
+### ============================================================================
+
+### 3.1 List Authorized Documents (Admin sees all)
+GET {{baseUrl}}/api/v1/documents?limit=10
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 3.2 List Authorized Documents (IT Analyst sees only IT and General docs)
+GET {{baseUrl}}/api/v1/documents?limit=10
+Authorization: Bearer {{itToken}}
+Accept: application/json
+
+### 3.3 Upload New Document (Admin/Authorized department)
+POST {{baseUrl}}/api/v1/documents/upload
+Authorization: Bearer {{itToken}}
+Content-Type: multipart/form-data; boundary=WebKitFormBoundary7MA4YWxkTrZu0gW
+
+--WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="title"
+
+ACME Corporation — Internal Network Topology
+--WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="department"
+
+it
+--WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="access_level"
+
+20
+--WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="network_topology.md"
+Content-Type: text/markdown
+
+# Internal Network Topology
+All corporate VPC subnets route through the central Transit Gateway in eu-central-1.
+--WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+
+### ============================================================================
+### 4. HYBRID KNOWLEDGE RETRIEVAL
+### ============================================================================
+
+### 4.1 Hybrid Search: Leave Policy Rollover
+POST {{baseUrl}}/api/v1/retrieval/search
+Authorization: Bearer {{hrToken}}
+Content-Type: application/json
+
+{
+  "query": "How many days of paid time off can be rolled over?",
+  "department": "hr",
+  "top_k": 3
+}
+
+### 4.2 Hybrid Search: Disaster Recovery Standby
+POST {{baseUrl}}/api/v1/retrieval/search
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "query": "What is the secondary standby AWS region for disaster recovery?",
+  "top_k": 3
+}
+
+
+### ============================================================================
+### 5. GROUNDED RAG QUESTION ANSWERING
+### ============================================================================
+
+### 5.1 Answerable Question with Source Citations
+POST {{baseUrl}}/api/v1/rag/ask
+Authorization: Bearer {{hrToken}}
+Content-Type: application/json
+
+{
+  "question": "What is the maximum number of unused PTO days an employee can carry over into the next year?",
+  "department": "hr",
+  "top_k": 5
+}
+
+### 5.2 Department Clearance Ceiling (HR Specialist asking about IT DR runbook)
+POST {{baseUrl}}/api/v1/rag/ask
+Authorization: Bearer {{hrToken}}
+Content-Type: application/json
+
+{
+  "question": "What is the RTO time objective for the Frankfurt database failover?",
+  "department": "it",
+  "top_k": 5
+}
+
+### 5.3 Honest Abstention (Query on Unanswerable Subject)
+POST {{baseUrl}}/api/v1/rag/ask
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "question": "What is the quantum encryption protocol planned for Martian satellites?",
+  "top_k": 5
+}
+
+
+### ============================================================================
+### 6. ADMINISTRATION & RBAC
+### ============================================================================
+
+### 6.1 List Active Tenants (Admin Only)
+GET {{baseUrl}}/api/v1/admin/tenants
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 6.2 Provision New Tenant (Admin Only)
+POST {{baseUrl}}/api/v1/admin/tenants
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "name": "ACME Logistics Partner",
+  "slug": "acme-logistics"
+}
+
+### 6.3 List Users in Tenant (Admin Only)
+GET {{baseUrl}}/api/v1/admin/users
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 6.4 Forbidden Non-Admin Call (HR Specialist attempting admin action)
+GET {{baseUrl}}/api/v1/admin/users
+Authorization: Bearer {{hrToken}}
+Accept: application/json
